@@ -21,7 +21,7 @@ mkdir -p "$backup"
 /bin/cp -p "$app/Contents/Resources/gtav/gtav_fast" "$backup/gtav_fast"
 /bin/cp -p "$app/Contents/Info.plist" "$backup/Info.plist"
 /usr/bin/ditto "$app/Contents/_CodeSignature" "$backup/_CodeSignature"
-trap 'status=$?; if (( status != 0 )); then /bin/cp -p "$backup/GTAV" "$app/Contents/MacOS/GTAV"; /bin/cp -p "$backup/gtav_fast" "$app/Contents/Resources/gtav/gtav_fast"; /usr/bin/ditto "$backup/_CodeSignature" "$app/Contents/_CodeSignature"; print -u2 "Update failed; previous executables and signature restored."; fi' EXIT
+trap 'update_exit_code=$?; if (( update_exit_code != 0 )); then /bin/cp -p "$backup/GTAV" "$app/Contents/MacOS/GTAV"; /bin/cp -p "$backup/gtav_fast" "$app/Contents/Resources/gtav/gtav_fast"; /usr/bin/ditto "$backup/_CodeSignature" "$app/Contents/_CodeSignature"; print -u2 "Update failed; previous executables and signature restored."; fi' EXIT
 /bin/cp -p "$here/GTAV" "$app/Contents/MacOS/GTAV.codex-new"
 /bin/cp -p "$here/gtav_fast" "$app/Contents/Resources/gtav/gtav_fast.codex-new"
 /bin/mv -f "$app/Contents/MacOS/GTAV.codex-new" "$app/Contents/MacOS/GTAV"
