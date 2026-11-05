@@ -2,7 +2,7 @@
 //
 // The game paces itself in sub_827B5878: while less than N/60 s (N = the int at 0x8391D9D4,
 // 2 on the 360) passed since the last frame (timebase), it sleeps. N <= 0 skips the wait.
-// --gtav_fps_limit=30 (default) leaves the game's limiter alone; any other value sets N = 0
+// --gtav_fps_limit=30 (default) restores the game's N = 2 limiter; any other value sets N = 0
 // and, unless 0 (uncapped), paces frames here to that rate instead. The game itself is not
 // the only limit: with the emulated GPU's vblank at 60 Hz (--vsync=true) other waits still
 // tie it to the display, so uncapped play also wants --vsync=false.
@@ -10,6 +10,7 @@
 #include <rex/cvar.h>
 #include <rex/hook.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <thread>
@@ -20,7 +21,7 @@
 #endif
 
 REXCVAR_DEFINE_INT32(gtav_fps_limit, 30, "GTAV",
-                     "Frame-rate limit: 30 = the game's own limiter, 0 = uncapped, other = that rate");
+                     "Frame-rate limit: 30 = restore the game's two-vblank limiter, 0 = uncapped, other = that rate");
 REXCVAR_DEFINE_BOOL(gtav_audio_unsync, true, "GTAV",
                     "Above 30 fps: stop the audio update waiting for the next 16 ms audio frame "
                     "(otherwise the game cannot exceed 62.5 fps)");
@@ -75,6 +76,9 @@ REX_HOOK_RAW(sub_827B5878) {
   ApplyPowerThrottling();
   int32_t limit = REXCVAR_GET(gtav_fps_limit);
   if (limit == 30) {
+    // Startup or a previous uncapped/custom limit may have cleared this guest interval.
+    // Delegating without restoring it left the nominal 30 FPS setting effectively uncapped.
+    Store32(base, kFrameIntervalVblanks, 2);
     __imp__sub_827B5878(ctx, base);
     return;
   }

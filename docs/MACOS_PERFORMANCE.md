@@ -143,3 +143,24 @@ its generated `gtav_hooks.h` and this project's authored `gtav/src` directory.
 The tool accepts only verified name blocks inside __LINKEDIT. Pass that control
 alongside the SDK/template controls to the unmodified taint scanner. Do not use a
 whole game library or arbitrary binary ranges as controls.
+
+## 30 FPS transition regression (after preview 1)
+
+The 30 FPS choice now restores the guest's two-vblank interval before calling its
+original wait routine. An earlier uncapped/custom setting could clear that interval,
+so simply delegating to the original routine did not reliably restore the 30 FPS cap.
+The launcher starts uncapped before the saved menu settings are applied.
+
+`frame_limit_hook_test` compiles the production hook with synthetic cvars, a stub
+for the original guest call and a sparse synthetic memory mapping. It checks that
+the guest receives the restored interval before running, transitions from uncapped,
+60 and 45 FPS back to 30, repeated restoration, neighboring bytes and the audio-sync
+preference. The previous production implementation fails this test; the correction
+passes, including AddressSanitizer and UndefinedBehaviorSanitizer. These are state
+and memory tests, not a display smoothness or hardware FPS benchmark.
+
+On the test M1 Mac, the corrected build produced CPU present-call medians near
+33.3 ms at the 30 FPS setting with native VSync enabled. The user preferred that
+profile to the VSync-on 60 FPS target. Loading spikes remain, and CPU present times
+are not on-screen display timestamps. Temporary reporting was disabled after the
+comparison. The preview 1 release does not contain this later limiter correction.
