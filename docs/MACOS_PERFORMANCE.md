@@ -102,3 +102,35 @@ No game files or compiled game libraries are published here.
 - git diff --check passed.
 - No gameplay run of the new binary has been performed, and the installed app
   was not replaced or restarted. Frame-rate improvements remain unmeasured.
+
+## Experimental update releases
+
+The `macos-update` ZIP requires an existing upstream v0.3.0 `GTAV.app`; it is not a
+standalone installer. `Update.command` backs up and replaces only the app's launcher
+and bundled frontend, then signs the app locally. Run it after quitting the game.
+On the next launch, the normal launcher syncs the frontend to the existing game
+folder. The updater does not open or modify that folder, saves, settings or shaders.
+Its backup path is printed on completion. A failed update restores the app code and
+signature. Keep the original app or its backup for rollback.
+
+Rebuild the two release executables from a clean archive of the release tag:
+
+1. Unpack the attached upstream v0.3.0 corresponding-source dependency archive.
+2. Apply this repository's `rexglue-sdk-gtav-linux.patch` in its `rexglue-sdk` directory
+   and `plume-gtav.patch` in its `plume` directory, once each.
+3. Run the following with an existing v0.3.0 app, Xcode command-line tools, CMake,
+   Ninja and LLVM's llvm-nm installed:
+
+```sh
+python3 tools/release/build_macos_update.py \
+  --dependencies /path/to/gtav-recomp-src \
+  --app /Applications/GTAV.app \
+  --llvm-bin /path/to/llvm/bin \
+  --build /tmp/gtav-macos-release
+```
+
+The helper links against the app's existing runtime dylibs; it does not redistribute
+or rebuild them. It builds the renderer's authored utility shaders and uses the
+matching source archive's authored fetch-resolve shader header. No game library or
+game shaders are build inputs. The original full release build remains available via
+`tools/release/build_release_macos.sh` when rebuilding every dependency.
