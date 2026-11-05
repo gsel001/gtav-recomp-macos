@@ -6,6 +6,8 @@ app=${1:-/Applications/GTAV.app}
 fail() { print -u2 -- "$*"; exit 1; }
 [[ -f "$app/Contents/Resources/gtav/librexruntime.dylib" && -f "$app/Contents/MacOS/GTAV" ]] || fail "An existing GTA V recomp v0.3.0 app is required. Pass its .app path as the first argument."
 [[ -w "$app/Contents/MacOS" && -w "$app/Contents/Resources/gtav" ]] || fail "The app is not writable by this account. Update a copy that you own."
+update_app_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+[[ "$update_app_version" == "0.3.0" ]] || fail "This update requires an upstream v0.3.0 app (found $update_app_version)."
 set +e
 /usr/bin/pgrep -x gtav_fast >/dev/null 2>&1
 running=$?

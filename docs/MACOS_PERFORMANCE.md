@@ -134,3 +134,12 @@ or rebuild them. It builds the renderer's authored utility shaders and uses the
 matching source archive's authored fetch-resolve shader header. No game library or
 game shaders are build inputs. The original full release build remains available via
 `tools/release/build_release_macos.sh` when rebuilding every dependency.
+
+Release scanning also compares against the locally compiled game library. Hook and
+import name strings occur in both Mach-O files' linker metadata; they are this
+project's public address/name analysis, not game instructions. Generate a narrow
+control with `tools/release/make_hook_name_control.py`, providing the frontend,
+its generated `gtav_hooks.h` and this project's authored `gtav/src` directory.
+The tool accepts only verified name blocks inside __LINKEDIT. Pass that control
+alongside the SDK/template controls to the unmodified taint scanner. Do not use a
+whole game library or arbitrary binary ranges as controls.
