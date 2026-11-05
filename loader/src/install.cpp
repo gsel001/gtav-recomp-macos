@@ -1921,6 +1921,10 @@ bool LaunchGame(const fs::path& root, std::wstring* error, const std::vector<std
                // renderer hides it and opens the game window on the desktop, leaving the player
                // looking at an empty black Space.
                L"--fullscreen=false", L"--mnk_mode=true",
+               // The native renderer owns the visible game window. Painting the hidden SDK
+               // window can block the main event loop in CAMetalLayer::nextDrawable until
+               // a Spaces transition makes a drawable available again.
+               L"--window_presenter=false",
 #endif
                L"--gtav_native=on", L"--gtav_fps_limit=0", L"--gpu_skip_rendering=true",
                L"--gpu_skip_rendering_lag_ms=4", L"--vsync=false", L"--gtav_native_vsync=false"};
