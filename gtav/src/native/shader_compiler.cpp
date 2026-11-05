@@ -60,6 +60,7 @@ std::mutex g_mutex;
 std::condition_variable g_cv;
 std::deque<std::string> g_queue;  // shader names ("ps_<HASH>")
 std::unordered_set<std::string> g_seen;
+std::unordered_set<std::string> g_prioritized;  // requested by a draw, once per shader
 std::unordered_set<std::string> g_present;  // .spv on disk: found at intake or compiled since
 std::atomic<uint32_t> g_ok{0}, g_failed{0};
 bool g_started = false;
@@ -258,7 +259,10 @@ void Enqueue(const std::string& name) {
     int workers = std::max(2, int(std::thread::hardware_concurrency()) / 3);
     for (int i = 0; i < workers; i++) std::thread(Worker).detach();
   }
-  g_queue.push_back(name);
+  if (g_prioritized.count(name))
+    g_queue.push_front(name);
+  else
+    g_queue.push_back(name);
   g_cv.notify_one();
 }
 
@@ -269,6 +273,21 @@ uint64_t CompileGeneration() { return g_generation.load(std::memory_order_acquir
 bool ShaderOnDisk(const std::string& name) {
   std::lock_guard lock(g_mutex);
   return g_present.count(name) != 0;
+}
+
+void PrioritizeShader(uint64_t hash, bool pixel) {
+  if (!REXCVAR_GET(gtav_native_compile) || !hash) return;
+  const std::string name = fmt::format("{}_{:016X}", pixel ? "ps" : "vs", hash);
+  std::lock_guard lock(g_mutex);
+  if (!g_prioritized.insert(name).second) return;
+  // The game creates large batches of shaders before using them. A fullscreen draw can
+  // otherwise wait behind the entire batch, leaving only audio until its shaders compile.
+  // Promote both stages: the request may arrive before the container reaches the compiler.
+  auto intake = std::find_if(g_intake.begin(), g_intake.end(),
+                             [&](const Intake& item) { return item.name == name; });
+  if (intake != g_intake.end()) std::rotate(g_intake.begin(), intake, std::next(intake));
+  auto queued = std::find(g_queue.begin(), g_queue.end(), name);
+  if (queued != g_queue.end()) std::rotate(g_queue.begin(), queued, std::next(queued));
 }
 
 static void IntakeWorker() {
@@ -309,7 +328,11 @@ void OnShaderCreated(const uint8_t* container, size_t size, uint64_t hash, bool 
     g_intake_started = true;
     std::thread(IntakeWorker).detach();
   }
-  g_intake.push_back({std::move(name), std::vector<uint8_t>(container, container + size)});
+  Intake item{std::move(name), std::vector<uint8_t>(container, container + size)};
+  if (g_prioritized.count(item.name))
+    g_intake.push_front(std::move(item));
+  else
+    g_intake.push_back(std::move(item));
   g_intake_cv.notify_one();
 }
 

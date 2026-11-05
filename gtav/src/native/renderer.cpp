@@ -9,6 +9,7 @@
 #include "menu.h"
 #include "paths.h"
 #include "shader_compiler.h"
+#include "frame_metrics.h"
 
 #include <plume_render_interface.h>
 
@@ -71,6 +72,8 @@ REXCVAR_DEFINE_INT32(gtav_native_flicker_min_blocks, 6, "GTAV",
                      "least this many 32-px blocks; smaller ones (often thin poles while driving) are only logged");
 REXCVAR_DEFINE_BOOL(gtav_native_replay, false, "GTAV",
                     "Native renderer: keep the last 90 presented frames; F8 writes them to logs/replay");
+REXCVAR_DEFINE_BOOL(gtav_native_frame_report, false, "GTAV",
+                    "Log five-second CPU present-call gap percentiles and present costs (not display timestamps)");
 REXCVAR_DEFINE_BOOL(gtav_native_fps, false, "GTAV", "Native renderer: on-screen frames-per-second counter");
 REXCVAR_DEFINE_BOOL(gtav_native_hidden, false, "GTAV",
                     "Native renderer: keep every game window hidden (unattended test runs)");
@@ -711,16 +714,17 @@ class Renderer {
   void MaybeSavePipelineCache(uint32_t new_pipelines) {
     pipelines_since_save_ += new_pipelines;
     auto now = std::chrono::steady_clock::now();
-    if (!pipelines_since_save_ || now - last_cache_save_ < std::chrono::seconds(20)) return;
-    last_cache_save_ = now;
-    pipelines_since_save_ = 0;
+    if (!pipelines_since_save_ || cache_writing_.load() ||
+        now - last_cache_save_ < std::chrono::seconds(20)) return;
+    last_cache_save_ = now;  // throttle failed/empty snapshots too, but keep the dirty count
     auto get_start = std::chrono::steady_clock::now();
     std::vector<uint8_t> data = plume::GetVulkanPipelineCacheData(device_.get());
     double get_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - get_start).count();
     if (data.empty()) return;
     // The file is written by a background thread: ~33 MB on the busy E: disk took ~2 s, a freeze
     // every 20 s while the renderer (and so the guest, through the swap wait) waited for it.
-    if (cache_writing_.exchange(true)) return;  // the previous save is still being written
+    if (cache_writing_.exchange(true)) return;
+    pipelines_since_save_ = 0;
     std::thread([this, data = std::move(data), get_ms] {
       auto start = std::chrono::steady_clock::now();
       std::error_code ec;
@@ -975,6 +979,31 @@ class Renderer {
     for (uint32_t i = 0; i < Backend::kFramesInFlight; i++) Retire((slot_ + i) % Backend::kFramesInFlight);
   }
 
+  // Submit-thread only. No game pixels are captured and no per-frame files are written.
+  void ReportPresent(std::chrono::steady_clock::time_point submitted,
+                     std::chrono::steady_clock::time_point presented) {
+    if (!REXCVAR_GET(gtav_native_frame_report)) {
+      if (report_last_.time_since_epoch().count()) {
+        present_gaps_.Take(); present_costs_.Take();
+        report_last_ = report_start_ = {};
+      }
+      return;
+    }
+    auto ms = [](auto d) { return std::chrono::duration<double, std::milli>(d).count(); };
+    if (report_last_.time_since_epoch().count()) present_gaps_.Add(ms(presented - report_last_));
+    present_costs_.Add(ms(presented - submitted));
+    report_last_ = presented;
+    if (!report_start_.time_since_epoch().count()) report_start_ = presented;
+    if (presented - report_start_ < std::chrono::seconds(5)) return;
+    const auto gaps = present_gaps_.Take(), costs = present_costs_.Take();
+    REXLOG_INFO("[native] CPU present calls: {} gaps, mean {:.2f}, p50 {:.2f}, p95 {:.2f}, p99 {:.2f}, "
+                "worst {:.2f} ms, {} over 50 ms; present cost p95 {:.2f} ms (not display timestamps)",
+                gaps.count, gaps.mean, gaps.p50, gaps.p95, gaps.p99, gaps.worst, gaps.over50, costs.p95);
+    report_start_ = presented;
+  }
+  FrameMetrics present_gaps_, present_costs_;
+  std::chrono::steady_clock::time_point report_last_{}, report_start_{};
+
   // Two frames in flight: frame N+1 is recorded while the GPU runs frame N, so a frame costs
   // max(record, GPU) instead of record + GPU. Shot and dump frames are waited for at once.
   void Present(const FramePacket& frame) {
@@ -1001,6 +1030,8 @@ class Renderer {
 #endif
     if (swapchain_->needsResize()) {
       RetireAll();  // also drains the submit thread
+      // Destroy references to old swap-chain image views before resize releases those views.
+      framebuffers_.clear();
       if (!swapchain_->resize()) {
         framebuffers_.clear();
 #ifdef __ANDROID__
@@ -1254,8 +1285,12 @@ class Renderer {
       plume::RenderCommandSemaphore* sg = signal;
       const plume::RenderCommandList* l = lists;
       queue_cmd_->executeCommandLists(&l, 1, &w, 1, &sg, 1, fence);
-      std::lock_guard lock(present_mutex_);
-      swapchain_->present(image, &sg, 1);
+      const auto submitted = std::chrono::steady_clock::now();
+      {
+        std::lock_guard lock(present_mutex_);
+        swapchain_->present(image, &sg, 1);
+      }
+      ReportPresent(submitted, std::chrono::steady_clock::now());
     });
     auto submit_end = std::chrono::steady_clock::now();
     auto present_end = submit_end;

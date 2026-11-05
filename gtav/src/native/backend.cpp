@@ -11,6 +11,7 @@
 #include "xenos_regs.h"
 #include "paths.h"
 #include "shader_compiler.h"
+#include "frame_metrics.h"
 
 #include "menu.h"
 #include "native_blit_shaders.h"
@@ -140,6 +141,15 @@ REXCVAR_DEFINE_DOUBLE(gtav_native_depth_slope_scale, 1.0, "GTAV",
 REXCVAR_DEFINE_DOUBLE(gtav_native_farpin_scale, 1.0, "GTAV",
                       "Experiment: scale for far-pinned viewports (min == max depth, e.g. the sky dome at 2^-24)");
 REXCVAR_DEFINE_STRING(gtav_native_skip_ps, "", "GTAV", "Diagnostic: drop draws with these pixel shader hashes");
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+#define GTAV_TRIM_UPLOADS_DEFAULT true
+#else
+#define GTAV_TRIM_UPLOADS_DEFAULT false
+#endif
+REXCVAR_DEFINE_BOOL(gtav_native_trim_uploads, GTAV_TRIM_UPLOADS_DEFAULT, "GTAV",
+                    "Reclaim desktop upload chunks unused for a full 120-completion slot window");
+REXCVAR_DEFINE_BOOL(gtav_native_memory_report, false, "GTAV",
+                    "Log cached texture, vertex/index and reserved upload bytes every 300 frames (partial GPU accounting)");
 REXCVAR_DEFINE_INT32(gtav_native_texture_budget_mb, 1024, "GTAV",
                      "Decoded texture cache budget: textures idle for 2 s are released above it (unified memory)");
 // iPhone: the vertex/index buffer cache had no limit and reached 18,000 buffers (140 MB of Metal
@@ -1330,6 +1340,7 @@ struct UploadRing {
   std::vector<Chunk> chunks;
   size_t chunk = 0;
   uint64_t offset = 0;
+  UploadRetention retention;
 
   UploadAllocation Allocate(uint64_t size, uint64_t alignment = 256) {
     offset = (offset + alignment - 1) & ~(alignment - 1);
@@ -1354,6 +1365,17 @@ struct UploadRing {
   }
 
   void Reset() {
+    // FrameComplete calls this after the slot's fence. Other slots own separate rings.
+    // A loading spike used to leave every upload chunk allocated for the whole session.
+#if !GTAV_MOBILE
+    const size_t used = offset ? chunk + 1 : 0;
+    const size_t keep = retention.Complete(used, chunks.size());
+    if (REXCVAR_GET(gtav_native_trim_uploads) && keep < chunks.size()) {
+      REXLOG_INFO("[native] upload ring: released {} MB after 120 completed slot frames",
+                  (chunks.size() - keep) * (kUploadChunk >> 20));
+      chunks.resize(keep);
+    }
+#endif
     chunk = 0;
     offset = 0;
   }
@@ -2307,6 +2329,14 @@ struct Backend::Impl {
       if (t.texture) total += t.bytes;
     uint64_t buffer_bytes = 0;
     for (const auto& [key, b] : buffers) buffer_bytes += b.buffer ? b.size : 0;
+    if (REXCVAR_GET(gtav_native_memory_report) && frame % 300 == 0) {
+      size_t chunks = upload.chunks.size();
+      for (const auto& p : parked) chunks += p.upload.chunks.size();
+      REXLOG_INFO("[native] cache memory (partial): textures {:.1f} MB ({} entries), "
+                  "vertex/index {:.1f} MB ({} entries), upload reserved {} MB; excludes render targets/driver/guest",
+                  total / 1048576.0, textures.size(), buffer_bytes / 1048576.0, buffers.size(),
+                  chunks * (kUploadChunk >> 20));
+    }
     // Buffers: released entries are erased (169,000 empty ones after an hour of driving) and the
     // memo in front of the map forgets them; the next use converts the guest data again.
     if (uint64_t bbudget = uint64_t(std::max(0, REXCVAR_GET(gtav_native_buffer_budget_mb))) << 20;
@@ -2764,6 +2794,7 @@ struct Backend::Impl {
         std::fclose(m);
       }
     }
+    if (!shader) PrioritizeShader(hash, pixel);
     return (shaders[key] = std::move(shader)).get();
   }
 

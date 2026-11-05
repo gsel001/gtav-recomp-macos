@@ -1,0 +1,15 @@
+name: Native renderer policy tests
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  policies:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S tests -B build/policy-tests -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/policy-tests
+      - run: ctest --test-dir build/policy-tests --output-on-failure

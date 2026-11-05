@@ -1,3 +1,15 @@
+# GTA V recomp — experimental macOS improvements
+
+A downstream of [andrewnakas/gtav-recomp](https://github.com/andrewnakas/gtav-recomp),
+with Mac presentation fixes, demand-prioritized shader compilation, reclaimable upload rings,
+and optional frame/memory reports. The renderer remains Vulkan through MoltenVK.
+
+See [the changes, build requirements and validation status](docs/MACOS_PERFORMANCE.md).
+This repository contains source only; the new changes have not yet been validated in gameplay.
+Upstream release links below point to upstream builds, which do not contain these changes.
+
+---
+
 Just want to play the game on Windows, Android, IOS, Mac or Linux? go here https://github.com/andrewnakas/gtav-recomp/releases
 
 # GTA V (Xbox 360) recompiled: Windows, Linux, macOS, iPhone and Android

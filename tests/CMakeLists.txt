@@ -1,0 +1,12 @@
+cmake_minimum_required(VERSION 3.20)
+project(gtav_native_policy_tests LANGUAGES CXX)
+enable_testing()
+add_executable(frame_metrics_test frame_metrics_test.cpp)
+target_compile_features(frame_metrics_test PRIVATE cxx_std_23)
+# Assertions are the test checks, including in a Release CI build.
+if(MSVC)
+  target_compile_options(frame_metrics_test PRIVATE /UNDEBUG)
+else()
+  target_compile_options(frame_metrics_test PRIVATE -UNDEBUG -Wall -Wextra -Werror)
+endif()
+add_test(NAME frame_metrics COMMAND frame_metrics_test)
