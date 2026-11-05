@@ -38,13 +38,16 @@ ImGuiContext* g_context = nullptr;
 bool g_font_uploaded = false;
 float g_scale = 1.0f;
 
-// Every setting the menu shows, by cvar name. Saved to gtav_settings.ini as name=value.
+// Settings shown by the menu or set by its presets. Saved as name=value.
 constexpr const char* kSettings[] = {
     "gtav_fps_limit",
     "gtav_native_vsync",
     "gtav_native_fps",
     "gtav_native_tile_penumbra_all",
     "gtav_native_async_pipelines",
+    "gtav_native_pipeline_wait_ms",
+    "gtav_native_texture_budget_mb",
+    "gtav_native_buffer_budget_mb",
     "gpu_skip_rendering_lag_ms",
     "gtav_native_exact_cache",
     "gtav_native_texture_recheck_frames",
@@ -96,6 +99,23 @@ void ApplyPreset(bool best) {
 #endif
   SaveSettings();
 }
+
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+// Opt-in settings tested on an 8 GB M1. Keep accurate sun shadows while limiting
+// pipeline waits and idle cache growth; a fixed 45 fps target leaves more headroom
+// than 60 in scenes whose GPU time is already around 20-22 ms. Streaming can still hitch.
+void ApplySteady45Preset() {
+  rex::cvar::SetFlagByName("gtav_fps_limit", "45");
+  SetBool("gtav_native_vsync", false);
+  SetBool("gtav_native_tile_penumbra_all", true);
+  SetBool("gtav_native_async_pipelines", true);
+  rex::cvar::SetFlagByName("gpu_skip_rendering_lag_ms", kSafeGpuLag);
+  rex::cvar::SetFlagByName("gtav_native_pipeline_wait_ms", "2");
+  rex::cvar::SetFlagByName("gtav_native_texture_budget_mb", "256");
+  rex::cvar::SetFlagByName("gtav_native_buffer_budget_mb", "96");
+  SaveSettings();
+}
+#endif
 
 void EnsureContext(uint32_t h) {
   if (g_context) return;
@@ -162,16 +182,24 @@ void Build(uint32_t fps, double frame_ms) {
   if (ImGui::Button("Best image")) ApplyPreset(true);
   ImGui::SameLine();
   if (ImGui::Button("Max performance")) ApplyPreset(false);
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+  ImGui::SameLine();
+  if (ImGui::Button("Steady 45 FPS")) ApplySteady45Preset();
+  if (ImGui::IsItemHovered())
+    ImGui::SetTooltip("Prioritize steady frame delivery on an 8 GB Mac.\n"
+                      "New effects may appear late while compiling; loading pauses can still occur.");
+#endif
   ImGui::TextDisabled("Compare the fps above after switching.");
   ImGui::Separator();
 
   bool changed = false;
   int limit = std::atoi(rex::cvar::GetFlagByName("gtav_fps_limit").c_str());
-  int choice = limit == 30 ? 0 : limit == 60 ? 1 : limit <= 0 ? 2 : 3;
-  const char* limits[] = {"30 (the game's own limiter)", "60", "Uncapped", "Custom (command line)"};
+  int choice = limit == 30 ? 0 : limit == 45 ? 1 : limit == 60 ? 2 : limit <= 0 ? 3 : 4;
+  const char* limits[] = {"30 (the game's own limiter)", "45", "60", "Uncapped", "Custom (command line)"};
+  const char* values[] = {"30", "45", "60", "0"};
   ImGui::SetNextItemWidth(260.0f * g_scale);
-  if (ImGui::Combo("Frame rate limit", &choice, limits, choice == 3 ? 4 : 3) && choice < 3) {
-    rex::cvar::SetFlagByName("gtav_fps_limit", choice == 0 ? "30" : choice == 1 ? "60" : "0");
+  if (ImGui::Combo("Frame rate limit", &choice, limits, choice == 4 ? 5 : 4) && choice < 4) {
+    rex::cvar::SetFlagByName("gtav_fps_limit", values[choice]);
     changed = true;
   }
 
