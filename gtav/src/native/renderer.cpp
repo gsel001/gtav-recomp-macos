@@ -502,8 +502,14 @@ class Renderer {
             }
           }
 #else
+          // Plume uses Retina pixel dimensions on macOS. The Metal view must use the
+          // same density, including after window resizes and fullscreen transitions.
+          SDL_WindowFlags window_flags = SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE;
+#ifdef __APPLE__
+          window_flags |= SDL_WINDOW_HIGH_PIXEL_DENSITY;
+#endif
           r->window_ = SDL_CreateWindow(on ? "GTA V" : "GTA V - native renderer (shadow)", 1280, 720,
-                                        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
+                                        window_flags |
                                             (REXCVAR_GET(gtav_native_hidden) ? SDL_WINDOW_HIDDEN : 0));
 #endif
 #ifdef __APPLE__
