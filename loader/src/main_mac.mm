@@ -18,6 +18,7 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include <atomic>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -465,6 +466,10 @@ class WindowUi : public InstallUi {
 @end
 
 int main(int argc, char** argv) {
+  // Input-attachment resolves alternate lit/dark frames on M1 / MoltenVK. Disable
+  // them before the game creates its render resources, as on iOS; an explicit
+  // GTAV_NATIVE_FETCH_RESOLVE=1 still allows testing the optimization.
+  setenv("GTAV_NATIVE_FETCH_RESOLVE", "0", 0);
   @autoreleasepool {
     g_root = fs::path(NSBundle.mainBundle.resourcePath.UTF8String) / "gtav";
     g_home = DefaultHome();
