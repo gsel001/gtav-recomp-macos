@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 project(gtav_native_policy_tests LANGUAGES CXX)
 enable_testing()
+find_package(Python3 QUIET COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME benchmark_analysis COMMAND ${Python3_EXECUTABLE} -m unittest discover
+           -s ${CMAKE_CURRENT_SOURCE_DIR}/../tools/benchmarks -p test_analyze.py -v)
+endif()
 add_executable(frame_metrics_test frame_metrics_test.cpp)
 target_compile_features(frame_metrics_test PRIVATE cxx_std_23)
 # Assertions are the test checks, including in a Release CI build.
