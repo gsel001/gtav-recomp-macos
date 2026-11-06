@@ -12,6 +12,8 @@ clang++ -std=c++23 -O2 -Wall -Wextra -Werror tools/benchmarks/worker.mm -framewo
 python3 -m unittest discover -s tools/benchmarks -p test_analyze.py -v
 python3 tools/benchmarks/run.py --worker /tmp/gtav-bench-worker --dxc /path/to/dxc --validator /path/to/spirv-val --out /tmp/gtav-benchmark-pilot --pilot
 python3 tools/benchmarks/run.py --worker /tmp/gtav-bench-worker --dxc /path/to/dxc --validator /path/to/spirv-val --out /tmp/gtav-benchmark-measured
+python3 tools/benchmarks/verify_results.py /tmp/gtav-benchmark-measured
+python3 tools/benchmarks/results.py /tmp/gtav-benchmark-measured /tmp/gtav-benchmark-analysis
 ```
 
 Use an environment allowing niceness changes; the tool sandbox can silently keep
@@ -95,6 +97,14 @@ cache/failure/success totals, queue drain, duplicate suppression, early repeated
 demand promotion and two compiler threads plus intake. A timing-sensitive peak-
 overlap assertion was replaced with a process thread-count check; transient
 subprocess overlap is not a guaranteed scheduling property.
+
+The final verifier reconciles all 40 trials, raw samples versus stored metrics,
+non-overlapping foreground work, priority receipts, shader reservations/outputs,
+validation status and occupied-slot thresholds. It verifies protocol consistency;
+it cannot establish causal isolation from background applications or OS memory
+activity. The result exporter includes per-trial queue latency and drain tails;
+the pairing tests protect B-minus-A signs in both halves of ABBA/BAAB. The small
+system-launch diagnostic is a preparation probe, not part of the measured matrix.
 
 ## Interpretation and bounds
 
