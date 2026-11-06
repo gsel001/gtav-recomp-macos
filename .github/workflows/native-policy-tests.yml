@@ -10,6 +10,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The release-specific source audit verifies pinned historical blobs.
+          fetch-depth: 0
       - run: cmake -S tests -B build/policy-tests -DCMAKE_BUILD_TYPE=Release
       - run: cmake --build build/policy-tests
       - run: ctest --test-dir build/policy-tests --output-on-failure
+      - name: Source archive provenance regressions
+        run: python3 -m unittest discover -s tests -p source_archive_audit_test.py -v
