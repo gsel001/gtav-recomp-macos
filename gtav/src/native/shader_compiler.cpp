@@ -50,7 +50,8 @@ constexpr bool kShaderDesktopMac = true;
 #else
 constexpr bool kShaderDesktopMac = false;
 #endif
-REXCVAR_DEFINE_BOOL(gtav_native_shader_low_priority, kShaderDesktopMac, "GTAV",
+// The measured M1 experiment did not establish a benefit; scheduling stays opt-in.
+REXCVAR_DEFINE_BOOL(gtav_native_shader_low_priority, false, "GTAV",
                     "POSIX shader compiler children: nice +5 (A/B off uses inherited priority)");
 REXCVAR_DEFINE_BOOL(gtav_native_shader_report, false, "GTAV",
                     "Add shader counters to five-second frame reports (also needs gtav_native_frame_report)");

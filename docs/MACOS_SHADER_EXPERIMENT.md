@@ -9,7 +9,9 @@ Desktop Mac retains two compiler workers even if hardware thread reporting chang
 Other platforms keep the previous worker formula. Draw-demand promotion of both
 intake and compilation queues is unchanged, including requests before intake.
 
-`gtav_native_shader_low_priority` defaults true on desktop Mac, false elsewhere.
+`gtav_native_shader_low_priority` defaults false on every platform. The initial
+local experiment defaulted true on desktop Mac; the review branch removes that
+default because the measured comparison did not establish a benefit.
 POSIX compiler child commands use `/usr/bin/nice -n 5` when enabled, inherited
 priority when false. Windows/iOS process paths are unchanged. Each shell argument
 is quoted, including embedded apostrophes. This is CPU scheduling niceness, not a
@@ -88,5 +90,12 @@ for build preparation. Keep all existing release files/checksums and audit work.
    saves or shader caches. The low_priority=false option supplies an immediate
    scheduling control, but exact code rollback uses the backup.
 
-The prepared build has not been installed or gameplay-tested. No FPS, stutter or
-fullscreen-freeze improvement is claimed. The macos.2 draft still needs human review.
+The initial local build was tested with inherited priority, then the original
+installed code/signature was restored. Two exploratory driving captures showed
+no new background compilation, occasional CPU-present gaps and intermittent blue
+square artifacts that persisted after restoration. A warmed drive felt better;
+the artifact frequency was approximately once per two minutes, not continuous.
+See BENCHMARK_RESULTS.md for the synthetic results and limitations. No FPS,
+stutter or fullscreen-freeze improvement is claimed. The default-off review
+branch has not been installed or built as a release; keep this PR draft. The
+macos.2 release still needs its separate final human review.

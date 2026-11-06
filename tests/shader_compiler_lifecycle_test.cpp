@@ -18,6 +18,8 @@ unsigned ThreadCount() {
 #endif
 using namespace gtav::native;
 int main() {
+  assert(!FLAGS_gtav_native_shader_low_priority);
+  assert(!FLAGS_gtav_native_shader_report);
 #ifdef __APPLE__
   const unsigned initial_threads = ThreadCount();
 #endif

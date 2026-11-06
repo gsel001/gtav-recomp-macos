@@ -2,8 +2,9 @@
 
 This harness measures host scheduling and authored DXC shader compilation, not
 GTA FPS, displayed frame cadence or the full game shader pipeline. It does not
-start GTA or modify installed game files. Production compiler/renderer source
-remains at experiment commit 8ab2228.
+start GTA or modify installed game files. The recorded measurements use protocol
+3e2ec0b and production experiment 8ab2228. The later review branch keeps Nice +5
+opt-in by default; no recorded timing data was regenerated for that change.
 
 Build on Mac with Xcode command-line tools:
 

@@ -1,4 +1,12 @@
-# Consented gameplay comparison plan
+# Historical gameplay comparison plan
+
+This plan predates the two exploratory driving captures. See
+`docs/BENCHMARK_RESULTS.md` for executed results, rollback and unresolved artifacts.
+The review branch keeps Nice +5 off by default. A later failed startup showed
+that appending duplicate cap/VSync flags is rejected by CLI11; use unique extra
+report flags with the existing saved profile instead. Do not run any installation
+or gameplay action without current consent.
+
 
 Status: NOT RUN—AWAITING CONSENT. The prepared executable remains experiment
 8ab2228 / local artifact SHA-256 4ed7cb20408674a663e9778d4b74ea05bb79d20c01d8ba7cbb107fbba8cd4c0a.
