@@ -17,6 +17,9 @@ void PrioritizeShader(uint64_t hash, bool pixel);
 // Bumped whenever a new SPIR-V file landed: cached misses should be looked up again.
 uint64_t CompileGeneration();
 
+// Called only alongside an existing five-second frame summary; opt-in, no I/O collection.
+void ReportShaderCompilation();
+
 // The background compiler found or wrote <name>.spv (no disk access).
 bool ShaderOnDisk(const std::string& name);
 
