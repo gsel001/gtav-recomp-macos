@@ -8,6 +8,7 @@
 // skipped renders a few hundred milliseconds later and the result persists for later runs.
 
 #include "shader_compiler.h"
+#include "shader_compile_policy.h"
 
 #include "paths.h"
 
@@ -44,6 +45,16 @@
 #endif
 REXCVAR_DEFINE_BOOL(gtav_native_compile, GTAV_NATIVE_COMPILE_DEFAULT, "GTAV",
                     "Compile shaders that have no precompiled SPIR-V in the background (tools/ next to the exe)");
+#if defined(__APPLE__) && !TARGET_OS_IPHONE
+constexpr bool kShaderDesktopMac = true;
+#else
+constexpr bool kShaderDesktopMac = false;
+#endif
+// The measured M1 experiment did not establish a benefit; scheduling stays opt-in.
+REXCVAR_DEFINE_BOOL(gtav_native_shader_low_priority, false, "GTAV",
+                    "POSIX shader compiler children: nice +5 (A/B off uses inherited priority)");
+REXCVAR_DEFINE_BOOL(gtav_native_shader_report, false, "GTAV",
+                    "Add shader counters to five-second frame reports (also needs gtav_native_frame_report)");
 // iOS: shaders without SPIR-V are still written to shader_cache/<name>.bin, for the Mac to translate
 // (tools/ios: the iPhone step pulls them and pushes the SPIR-V back).
 REXCVAR_DEFINE_BOOL(gtav_native_save_missing_shaders, !GTAV_NATIVE_COMPILE_DEFAULT, "GTAV",
@@ -63,6 +74,7 @@ std::unordered_set<std::string> g_seen;
 std::unordered_set<std::string> g_prioritized;  // requested by a draw, once per shader
 std::unordered_set<std::string> g_present;  // .spv on disk: found at intake or compiled since
 std::atomic<uint32_t> g_ok{0}, g_failed{0};
+ShaderCompileCounters g_counts;
 bool g_started = false;
 // New shaders arrive on game threads (the D3D create hooks). The disk checks and the container
 // write happen on an intake thread: on the busy USB disk each exists() / fopen took ~50 ms, on
@@ -110,9 +122,7 @@ bool Run(const std::vector<std::string>& args) {
   (void)args;
   return false;
 #else
-  std::string cmd;
-  for (const auto& a : args) cmd += "'" + a + "' ";
-  cmd += ">/dev/null 2>&1";
+  const std::string cmd = PosixShaderCommand(args, REXCVAR_GET(gtav_native_shader_low_priority));
   return std::system(cmd.c_str()) == 0;
 #endif
 }
@@ -240,9 +250,11 @@ void Worker() {
         g_present.insert(name);
       }
       g_generation.fetch_add(1, std::memory_order_release);
+      g_counts.Finish(ShaderCompileCounters::Outcome::Compiled);
       uint32_t n = g_ok.fetch_add(1) + 1;
       if (n <= 5 || n % 50 == 0) REXLOG_INFO("[native] compiled {} new shaders (latest {})", n, name);
     } else {
+      g_counts.Finish(ShaderCompileCounters::Outcome::Failed);
       uint32_t n = g_failed.fetch_add(1) + 1;
       REXLOG_WARN("[native] shader {} failed to compile ({} failures); its draws stay skipped", name, n);
     }
@@ -253,11 +265,10 @@ void Enqueue(const std::string& name) {
   std::lock_guard lock(g_mutex);
   if (!g_started) {
     g_started = true;
-    // Low-priority workers: two were enough to catch up after a streaming burst with the
-    // precompiled set; a first run with no SPIR-V compiles every shader the game creates, so
-    // machines with more cores get more (a third of them).
-    int workers = std::max(2, int(std::thread::hardware_concurrency()) / 3);
-    for (int i = 0; i < workers; i++) std::thread(Worker).detach();
+    // Preserve two compiler workers on desktop Mac for this contention experiment.
+    // Other platforms retain the original third-of-hardware-threads policy.
+    const unsigned workers = ShaderCompilerWorkers(std::thread::hardware_concurrency(), kShaderDesktopMac);
+    for (unsigned i = 0; i < workers; i++) std::thread(Worker).detach();
   }
   if (g_prioritized.count(name))
     g_queue.push_front(name);
@@ -269,6 +280,16 @@ void Enqueue(const std::string& name) {
 }  // namespace
 
 uint64_t CompileGeneration() { return g_generation.load(std::memory_order_acquire); }
+
+void ReportShaderCompilation() {
+  if (!REXCVAR_GET(gtav_native_shader_report)) return;
+  const auto s = g_counts.Read();
+  REXLOG_INFO("[native] shader totals: pending {}, completed {}, failed {}, cached {}, skipped {}; "
+              "compiler workers {}, low priority {} (approximate snapshot)",
+              s.pending, s.completed, s.failed, s.cached, s.skipped,
+              ShaderCompilerWorkers(std::thread::hardware_concurrency(), kShaderDesktopMac),
+              REXCVAR_GET(gtav_native_shader_low_priority));
+}
 
 bool ShaderOnDisk(const std::string& name) {
   std::lock_guard lock(g_mutex);
@@ -305,6 +326,7 @@ static void IntakeWorker() {
     if (fs::exists(SpirvDirPath() / (item.name + ".spv"), ec) && VariantsOnDisk(item.name)) {
       std::lock_guard lock(g_mutex);
       g_present.insert(item.name);
+      g_counts.Finish(ShaderCompileCounters::Outcome::Cached);
       continue;
     }
     fs::create_directories(CacheDir(), ec);
@@ -316,6 +338,7 @@ static void IntakeWorker() {
       }
     }
     if (REXCVAR_GET(gtav_native_compile)) Enqueue(item.name);
+    else g_counts.Finish(ShaderCompileCounters::Outcome::Skipped);
   }
 }
 
@@ -324,6 +347,7 @@ void OnShaderCreated(const uint8_t* container, size_t size, uint64_t hash, bool 
   std::string name = fmt::format("{}_{:016X}", pixel ? "ps" : "vs", hash);
   std::lock_guard lock(g_mutex);
   if (!g_seen.insert(name).second) return;
+  g_counts.Accept();
   if (!g_intake_started) {
     g_intake_started = true;
     std::thread(IntakeWorker).detach();

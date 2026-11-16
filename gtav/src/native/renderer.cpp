@@ -999,6 +999,7 @@ class Renderer {
     REXLOG_INFO("[native] CPU present calls: {} gaps, mean {:.2f}, p50 {:.2f}, p95 {:.2f}, p99 {:.2f}, "
                 "worst {:.2f} ms, {} over 50 ms; present cost p95 {:.2f} ms (not display timestamps)",
                 gaps.count, gaps.mean, gaps.p50, gaps.p95, gaps.p99, gaps.worst, gaps.over50, costs.p95);
+    ReportShaderCompilation();
     report_start_ = presented;
   }
   FrameMetrics present_gaps_, present_costs_;
